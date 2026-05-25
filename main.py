@@ -3,6 +3,7 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 import matplotlib.pyplot as plt
+from stable_baselines3 import PPO
 
 model = mujoco.MjModel.from_xml_path("mujoco_menagerie/franka_emika_panda/scene.xml")
 data = mujoco.MjData(model)
@@ -12,6 +13,9 @@ ee_id=mujoco.mj_name2id(
             "hand"
 
 )
+
+# Load RL model
+model_rl=PPO.load("franka_policy")
 
 # Logging
 actual_positions=[]
@@ -81,6 +85,22 @@ with mujoco.viewer.launch_passive(model,data) as viewer:
 
     force = Kp@c_error + Kd@cvel_error # Compute force
     tau = J.T@force # Compute torque command  
+
+    # Observation vector given to PPO
+    obs=np.concatenate([
+        cpos,
+        cvel,
+        c_error
+    ]).astype(np.float32)
+
+    # Predict residual torque corrections from PPO policy
+    action,_=model_rl.predict(
+        obs,
+        deterministic=True
+    )
+
+    tau = tau + action # PD torque + RL torque correction
+
     tau=np.clip(tau,-50,50) 
 
     data.ctrl[0:7] = tau # Send torque commands to 7 arm actuators 
