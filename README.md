@@ -2,7 +2,7 @@
 
 ## About
 
-This project implements a trajectory-tracking controller for a simulated Franka Panda robotic arm in MuJoCo. The objective is to achieve accurate and smooth end-effector tracking of a desired Cartesian trajectory over time.
+Hi! This project implements a trajectory-tracking controller for a simulated Franka Panda robotic arm in MuJoCo. The objective is to achieve accurate and smooth end-effector tracking of a desired Cartesian trajectory over time.
 
 This approach combines a classical Cartesian PD controller with a residual reinforcement learning policy trained using PPO (Proximal Policy Optimisation). The reinforcement learning policy learns corrective torque actions that improve tracking behaviour under noisy conditions.
 
@@ -48,7 +48,7 @@ Evaluation launches:
 
 - State: PPO receives the end-effector position, velocity and Cartesian tracking error:
 
-  [x,y,z, xdot,ydot,zdot, xerror,yerror,zerror]
+  `[x, y, z, ẋ, ẏ, ż, xerror, yerror, zerror]`
 
 - Action: PPO outputs seven residual joint torque corrections which are combined with the baseline controller:
 
@@ -68,6 +68,14 @@ Performance is evaluated using mean tracking error, maximum tracking error and d
 
 Example results:
 
-- Mean tracking error: 0.0337
+- Mean tracking error: 0.03160601387771082
+- Max tracking error: 0.705209188822721
+- The controller maintained stable tracking of the desired circular trajectory while keeping average error relatively low. Small deviations mainly occur during the initial settling phase and due to observation noise introduced during training.
 
-- Max tracking error: 0.7052
+### Simulation Results
+
+| Simulation | Desired vs Actual Trajectory | Tracking Error |
+|-------------|------------------------------|----------------|
+| <img src="images/output2.gif" width="100%"> | <img src="images/Figure_1_3.png" width="100%"> | <img src="images/Figure_2_3.png" width="100%"> |
+
+Had a lot of fun building this project and applying concepts from my robotics modules, particularly control methods, robot kinematics and reinforcement learning 🤖
