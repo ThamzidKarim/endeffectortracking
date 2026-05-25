@@ -2,9 +2,22 @@ import time
 import mujoco
 import mujoco.viewer
 import numpy as np
+import matplotlib.pyplot as plt
 
 model = mujoco.MjModel.from_xml_path("mujoco_menagerie/franka_emika_panda/scene.xml")
 data = mujoco.MjData(model)
+ee_id=mujoco.mj_name2id(
+            model,
+            mujoco.mjtObj.mjOBJ_BODY,
+            "hand"
+
+)
+
+# Logging
+actual_positions=[]
+desired_positions=[]
+tracking_errors=[]
+times=[]
 
 with mujoco.viewer.launch_passive(model,data) as viewer:
   # Close the viewer automatically after 30 wall-seconds.
@@ -13,51 +26,63 @@ with mujoco.viewer.launch_passive(model,data) as viewer:
   while viewer.is_running() and time.time() - start < 30:
     step_start = time.time()
 
-    # Read current arm joint positions and velocities
+    # Read current arm joint velocities
     # Use only the first 7 values (arm joints) and ignore the gripper
-    qpos = data.qpos[:7]
     qvel = data.qvel[:7]
 
     t = data.time # Simulation time used to generate trajectories
-    
-    # Position gain matrix
-    Kp = np.diag([100,100,100,80,80,50,50])
 
-    # Damping gain matrix
-    Kd = np.diag([20,20,20,15,15,10,10])
+    # Circle trajectory
+    radius = 0.15
+    x = 0.5 + radius*np.cos(t)
+    y = radius*np.sin(t)
+    z = 0.5
 
-    # Desired joint-space trajectories
-    qpos_d = np.array([
-        0.5*np.sin(t),
-        0.3*np.cos(t),
-        0.2*np.sin(t),
-        0.15*np.cos(t),
-        0.1*np.sin(t),
-        0.1*np.cos(t),
-        0.05*np.sin(t)
-    ])
+    # Desired end-effector (cartesian) trajectories
+    cpos_d = np.array([x,y,z])
 
-    # Desired joint velocities
-    qvel_d = np.array([
-        0.5*np.cos(t),
-        -0.3*np.sin(t),
-        0.2*np.cos(t),
-        -0.15*np.sin(t),
-        0.1*np.cos(t),
-        -0.1*np.sin(t),
-        0.05*np.cos(t)
+    cvel_d = np.array([
+        -radius*np.sin(t),
+        radius*np.cos(t),
+        0
     ])
     
+    # Current end-effector position
+    cpos=data.xpos[ee_id]
     
-    # Position error
-    q_error = qpos_d - qpos
+    # Jacobian
+    J_pos=np.zeros((3,model.nv))
 
-    # Velocity error
-    qd_error = qvel_d - qvel
+    mujoco.mj_jacBody(
+        model,
+        data,
+        J_pos,
+        None,
+        ee_id
+    )
 
-    # Compute torque command  
-    tau = Kp@q_error + Kd@qd_error
-  
+    J=J_pos[:,:7]
+
+    cvel=J@qvel # Current Cartesian velocity
+
+    # Cartesian errors
+    c_error = cpos_d - cpos
+    cvel_error = cvel_d - cvel
+
+    # Store data
+    actual_positions.append(cpos.copy())
+    desired_positions.append(cpos_d)
+    tracking_errors.append(np.linalg.norm(c_error))
+    times.append(t)
+
+    # Cartesian PD gains
+    Kp = np.diag([150,150,150])
+    Kd = np.diag([30,30,30])
+
+    force = Kp@c_error + Kd@cvel_error # Compute force
+    tau = J.T@force # Compute torque command  
+    tau=np.clip(tau,-50,50) 
+
     data.ctrl[0:7] = tau # Send torque commands to 7 arm actuators 
     data.ctrl[7] = 0 # Leave the gripper actuator inactive
 
@@ -71,3 +96,74 @@ with mujoco.viewer.launch_passive(model,data) as viewer:
     time_until_next_step = model.opt.timestep - (time.time() - step_start)
     if time_until_next_step > 0:
       time.sleep(time_until_next_step)
+
+print(
+    "Mean tracking error:",
+    np.mean(
+        tracking_errors[
+            int(len(tracking_errors)*0.2):
+        ]
+    )
+)
+
+print(
+    "Max tracking error:",
+    np.max(tracking_errors)
+)
+
+# Convert logs to arrays
+
+actual_positions=np.array(
+    actual_positions
+)
+
+desired_positions=np.array(
+    desired_positions
+)
+
+
+# Desired vs actual trajectory
+
+plt.figure()
+
+plt.plot(
+    desired_positions[:,0],
+    desired_positions[:,1],
+    label="Desired"
+)
+
+plt.plot(
+    actual_positions[:,0],
+    actual_positions[:,1],
+    label="Actual"
+)
+
+plt.xlabel("X")
+plt.ylabel("Y")
+plt.title(
+    "Desired vs Actual Trajectory"
+)
+
+plt.legend()
+
+plt.axis("equal")
+
+plt.show()
+
+
+# Tracking error
+
+plt.figure()
+
+plt.plot(
+    times,
+    tracking_errors
+)
+
+plt.xlabel("Time")
+plt.ylabel("Tracking Error")
+plt.title(
+    "Tracking Error Over Time"
+)
+
+plt.show()
